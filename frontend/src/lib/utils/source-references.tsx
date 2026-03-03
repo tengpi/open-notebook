@@ -183,7 +183,7 @@ export function convertSourceReferences(
  */
 export function convertReferencesToMarkdownLinks(text: string): string {
   // Step 1: Find ALL references using simple greedy pattern
-  const refPattern = /(source_insight|note|source):([a-zA-Z0-9_]+)/g
+  const refPattern = /(source_insight|note|source):([a-zA-Z0-9_]+(?:#chunk:\d+)?)/g
   const references: Array<{ type: string; id: string; chunkOrder?: number; index: number; length: number }> = []
 
   let match
