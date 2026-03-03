@@ -105,7 +105,12 @@ async def provide_answer(state: SubGraphState, config: RunnableConfig) -> dict:
         if len(results) == 0:
             return {"answers": []}
         payload["results"] = results
-        ids = [r["id"] for r in results]
+        ids = []
+        for r in results:
+            if r.get("chunk_order") is not None:
+                ids.append(f"{r['id']}#chunk:{r['chunk_order']}")
+            else:
+                ids.append(str(r["id"]))
         payload["ids"] = ids
         system_prompt = Prompter(prompt_template="ask/query_process").render(data=payload)  # type: ignore[arg-type]
         model = await provision_langchain_model(

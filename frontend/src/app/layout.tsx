@@ -25,6 +25,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script src="/chunk-highlight.js" defer />
       </head>
       <body className={inter.className}>
         <ErrorBoundary>

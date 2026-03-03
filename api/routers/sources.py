@@ -935,6 +935,35 @@ async def delete_source(source_id: str):
         raise HTTPException(status_code=500, detail=f"Error deleting source: {str(e)}")
 
 
+@router.get("/sources/{source_id}/chunks/{chunk_order}")
+async def get_source_chunk(source_id: str, chunk_order: int):
+    """Get a specific chunk's content by order number."""
+    try:
+        full_id = ensure_record_id(
+            f"source:{source_id}" if ":" not in source_id else source_id
+        )
+        result = await repo_query(
+            "SELECT content FROM source_embedding WHERE source = $sid AND `order` = $order LIMIT 1",
+            {"sid": full_id, "order": chunk_order},
+        )
+        if not result:
+            raise HTTPException(status_code=404, detail="Chunk not found")
+        return {
+            "content": result[0]["content"],
+            "order": chunk_order,
+            "source_id": source_id,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error fetching chunk {chunk_order} for source {source_id}: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching chunk: {str(e)}"
+        )
+
+
 @router.get("/sources/{source_id}/insights", response_model=List[SourceInsightResponse])
 async def get_source_insights(source_id: str):
     """Get all insights for a specific source."""

@@ -19,9 +19,24 @@ export function useModalManager() {
    * @param id - ID of the content to display
    */
   const openModal = (type: ModalType, id: string) => {
+    // Extract chunk reference if present (e.g., "abc123#chunk:3")
+    const chunkMatch = id.match(/#chunk:(\d+)$/)
+    let cleanId = id
+    if (chunkMatch) {
+      const sourceId = id.replace(/#chunk:\d+$/, '')
+      sessionStorage.setItem('highlight_chunk', JSON.stringify({
+        sourceId,
+        chunkOrder: parseInt(chunkMatch[1]),
+        ts: Date.now()
+      }))
+      cleanId = sourceId
+    } else {
+      sessionStorage.removeItem('highlight_chunk')
+    }
+
     const params = new URLSearchParams(searchParams?.toString() || '')
     params.set('modal', type)
-    params.set('id', id)
+    params.set('id', cleanId)
     // Use scroll: false to prevent page from scrolling when modal state changes
     router.push(`${pathname}?${params.toString()}`, { scroll: false })
   }

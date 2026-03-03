@@ -6,6 +6,7 @@ export type ReferenceType = 'source' | 'note' | 'source_insight'
 export interface ParsedReference {
   type: ReferenceType
   id: string
+  chunkOrder?: number
   originalText: string
   startIndex: number
   endIndex: number
@@ -29,6 +30,7 @@ export interface ReferenceData {
   number: number
   type: ReferenceType
   id: string
+  chunkOrder?: number
 }
 
 /**
@@ -46,17 +48,23 @@ export interface ReferenceData {
 export function parseSourceReferences(text: string): ParsedReference[] {
   // Match pattern: (source_insight|note|source):alphanumeric_id
   // This handles references both inside and outside brackets
-  const pattern = /(source_insight|note|source):([a-zA-Z0-9_]+)/g
+  const pattern = /(source_insight|note|source):([a-zA-Z0-9_]+(?:#chunk:\d+)?)/g
   const matches: ParsedReference[] = []
 
   let match
   while ((match = pattern.exec(text)) !== null) {
     const type = match[1] as ReferenceType
-    const id = match[2]
+    const fullId = match[2]
+
+    // Extract chunk order if present (e.g., "abc123#chunk:3")
+    const chunkMatch = fullId.match(/#chunk:(\d+)$/)
+    const id = chunkMatch ? fullId.replace(/#chunk:\d+$/, '') : fullId
+    const chunkOrder = chunkMatch ? parseInt(chunkMatch[1]) : undefined
 
     matches.push({
       type,
       id,
+      chunkOrder,
       originalText: match[0],
       startIndex: match.index,
       endIndex: pattern.lastIndex
@@ -121,13 +129,15 @@ export function convertSourceReferences(
     }
 
     // Add clickable reference button
+    // Pass chunk info in the id so openModal can handle it
+    const clickId = match.chunkOrder !== undefined ? `${match.id}#chunk:${match.chunkOrder}` : match.id
     parts.push(
       <button
         key={`ref-${idx}-${match.type}-${match.id}`}
         onClick={(e) => {
           e.preventDefault()
           e.stopPropagation()
-          onReferenceClick(match.type, match.id)
+          onReferenceClick(match.type, clickId)
         }}
         className="text-primary hover:underline cursor-pointer inline font-medium"
         type="button"
@@ -174,7 +184,7 @@ export function convertSourceReferences(
 export function convertReferencesToMarkdownLinks(text: string): string {
   // Step 1: Find ALL references using simple greedy pattern
   const refPattern = /(source_insight|note|source):([a-zA-Z0-9_]+)/g
-  const references: Array<{ type: string; id: string; index: number; length: number }> = []
+  const references: Array<{ type: string; id: string; chunkOrder?: number; index: number; length: number }> = []
 
   let match
   while ((match = refPattern.exec(text)) !== null) {
@@ -187,9 +197,15 @@ export function convertReferencesToMarkdownLinks(text: string): string {
       continue // Skip invalid references
     }
 
+    // Extract chunk order if present
+    const chunkMatch = id.match(/#chunk:(\d+)$/)
+    const cleanId = chunkMatch ? id.replace(/#chunk:\d+$/, '') : id
+    const chunkOrder = chunkMatch ? parseInt(chunkMatch[1]) : undefined
+
     references.push({
       type,
-      id,
+      id: cleanId,
+      chunkOrder,
       index: match.index,
       length: match[0].length
     })
@@ -246,8 +262,9 @@ export function convertReferencesToMarkdownLinks(text: string): string {
       displayText = refText
     }
 
-    // Step 4: Build the markdown link
-    const href = `#ref-${ref.type}-${ref.id}`
+    // Step 4: Build the markdown link (include chunk info if present)
+    const chunkSuffix = ref.chunkOrder !== undefined ? `#chunk:${ref.chunkOrder}` : ''
+    const href = `#ref-${ref.type}-${ref.id}${chunkSuffix}`
     const markdownLink = `[${displayText}](${href})`
 
     // Step 5: Replace in the result string
@@ -276,10 +293,11 @@ export function createReferenceLinkComponent(
   }) => {
     // Check if this is a reference link (starts with #ref-)
     if (href?.startsWith('#ref-')) {
-      // Parse: #ref-source-abc123 → type=source, id=abc123
-      const parts = href.substring(5).split('-') // Remove '#ref-'
+      // Parse: #ref-source-abc123#chunk:3 → type=source, id=abc123#chunk:3
+      const refContent = href.substring(5) // Remove '#ref-'
+      const parts = refContent.split('-')
       const type = parts[0] as ReferenceType
-      const id = parts.slice(1).join('-') // Rejoin in case ID has dashes
+      const id = parts.slice(1).join('-') // Rejoin in case ID has dashes (may include #chunk:N)
 
       // Select appropriate icon based on reference type
       const IconComponent =
@@ -350,12 +368,14 @@ export function convertReferencesToCompactMarkdown(text: string, referencesLabel
   let nextNumber = 1
 
   for (const reference of references) {
-    const key = `${reference.type}:${reference.id}`
+    const chunkSuffix = reference.chunkOrder !== undefined ? `#chunk:${reference.chunkOrder}` : ''
+    const key = `${reference.type}:${reference.id}${chunkSuffix}`
     if (!referenceMap.has(key)) {
       referenceMap.set(key, {
         number: nextNumber++,
         type: reference.type,
-        id: reference.id
+        id: reference.id,
+        chunkOrder: reference.chunkOrder
       })
     }
   }
@@ -389,8 +409,9 @@ export function convertReferencesToCompactMarkdown(text: string, referencesLabel
       replaceEnd = refEnd + 1
     }
 
-    // Build the numbered citation with full reference in href
-    const citationLink = `[${number}](#ref-${reference.type}-${reference.id})`
+    // Build the numbered citation with full reference in href (include chunk info)
+    const chunkSuffix = reference.chunkOrder !== undefined ? `#chunk:${reference.chunkOrder}` : ''
+    const citationLink = `[${number}](#ref-${reference.type}-${reference.id}${chunkSuffix})`
 
     // Replace in the result string
     result = result.substring(0, replaceStart) + citationLink + result.substring(replaceEnd)
@@ -401,7 +422,8 @@ export function convertReferencesToCompactMarkdown(text: string, referencesLabel
 
   // Iterate through reference map in insertion order (Map preserves order)
   for (const [, refData] of referenceMap) {
-    const refListItem = `[${refData.number}] - [${refData.type}:${refData.id}](#ref-${refData.type}-${refData.id})`
+    const refChunkSuffix = refData.chunkOrder !== undefined ? `#chunk:${refData.chunkOrder}` : ''
+    const refListItem = `[${refData.number}] - [${refData.type}:${refData.id}${refChunkSuffix}](#ref-${refData.type}-${refData.id}${refChunkSuffix})`
     refListLines.push(refListItem)
   }
 
@@ -441,10 +463,11 @@ export function createCompactReferenceLinkComponent(
   }) => {
     // Check if this is a reference link (starts with #ref-)
     if (href?.startsWith('#ref-')) {
-      // Parse: #ref-source-abc123 → type=source, id=abc123
-      const parts = href.substring(5).split('-') // Remove '#ref-'
+      // Parse: #ref-source-abc123#chunk:3 → type=source, id=abc123#chunk:3
+      const refContent = href.substring(5) // Remove '#ref-'
+      const parts = refContent.split('-')
       const type = parts[0] as ReferenceType
-      const id = parts.slice(1).join('-') // Rejoin in case ID has dashes
+      const id = parts.slice(1).join('-') // Rejoin in case ID has dashes (may include #chunk:N)
 
       return (
         <button
