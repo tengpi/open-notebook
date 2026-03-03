@@ -101,7 +101,7 @@ async def provide_answer(state: SubGraphState, config: RunnableConfig) -> dict:
         # if state["type"] == "text":
         #     results = text_search(state["term"], 10, True, True)
         # else:
-        results = await vector_search(state["term"], 15, True, True)
+        results = await vector_search(state["term"], 13, True, True)
         if len(results) == 0:
             return {"answers": []}
         payload["results"] = results
