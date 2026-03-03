@@ -1,5 +1,6 @@
 import apiClient from './client'
 import { SearchRequest, SearchResponse, AskRequest } from '@/lib/types/search'
+import { getApiUrl } from '@/lib/config'
 
 export const searchApi = {
   // Standard search (non-streaming)
@@ -8,7 +9,8 @@ export const searchApi = {
     return response.data
   },
 
-  // Ask with streaming (uses relative URL for Docker compatibility)
+  // Ask with streaming - connects directly to FastAPI to avoid
+  // Next.js rewrite proxy buffering/timeout issues with SSE
   askKnowledgeBase: async (params: AskRequest) => {
     // Get auth token using the same logic as apiClient interceptor
     let token = null
@@ -26,9 +28,11 @@ export const searchApi = {
       }
     }
 
-    // Use relative URL to leverage Next.js rewrites
-    // This works both in dev (Next.js proxy) and production (Docker network)
-    const url = '/api/search/ask'
+    // Build direct URL to FastAPI, bypassing Next.js rewrite proxy.
+    // The proxy buffers SSE responses and has idle connection timeouts,
+    // which breaks progressive streaming display for slow LLM backends.
+    const apiUrl = await getApiUrl()
+    const url = `${apiUrl}/api/search/ask`
 
     // Use fetch with ReadableStream for SSE
     const response = await fetch(url, {
